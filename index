@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Social Media Analysis DB</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #f5f4f1;
+    --surface: #ffffff;
+    --surface2: #f0efe9;
+    --border: #dddbd4;
+    --border2: #c8c5bc;
+    --text: #1a1a18;
+    --muted: #6b6961;
+    --accent: #1a1a18;
+    --accent-fg: #ffffff;
+    --success-bg: #eaf3de;
+    --success-text: #3b6d11;
+    --success-border: #97c459;
+    --error-bg: #fcebeb;
+    --error-text: #a32d2d;
+    --error-border: #f09595;
+    --info-bg: #e6f1fb;
+    --info-text: #185fa5;
+    --info-border: #85b7eb;
+    --radius: 8px;
+    --radius-lg: 12px;
+  }
+
+  body {
+    font-family: 'Georgia', serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 32px;
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+  }
+  header h1 { font-size: 18px; font-weight: normal; letter-spacing: -.01em; }
+  header span { font-size: 12px; color: var(--muted); font-family: monospace; }
+
+  .layout { display: flex; min-height: calc(100vh - 57px); }
+
+  nav {
+    width: 190px;
+    flex-shrink: 0;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 20px 0;
+  }
+  .nav-section { font-size: 10px; font-family: monospace; letter-spacing: .08em; color: var(--muted);
+    padding: 10px 20px 4px; text-transform: uppercase; }
+  .nav-item { display: block; padding: 7px 20px; font-size: 13px; cursor: pointer;
+    color: var(--muted); border: none; background: none; width: 100%; text-align: left;
+    font-family: 'Georgia', serif; transition: color .12s; border-left: 2px solid transparent; }
+  .nav-item:hover { color: var(--text); }
+  .nav-item.active { color: var(--text); border-left-color: var(--accent); background: var(--surface2); font-weight: bold; }
+
+  main { flex: 1; padding: 28px 32px; max-width: 860px; }
+
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  h2 { font-size: 16px; font-weight: normal; margin-bottom: 20px; padding-bottom: 10px;
+    border-bottom: 1px solid var(--border); }
+
+  .form-grid { display: grid; gap: 12px; margin-bottom: 12px; }
+  .cols-1 { grid-template-columns: 1fr; }
+  .cols-2 { grid-template-columns: 1fr 1fr; }
+  .cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+
+  .field-group { display: flex; flex-direction: column; gap: 4px; }
+  label.field-label { font-size: 11px; color: var(--muted); font-family: monospace; letter-spacing: .04em; }
+
+  input, select, textarea {
+    width: 100%; padding: 7px 10px; font-size: 13px;
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--surface); color: var(--text);
+    font-family: 'Georgia', serif;
+    transition: border-color .12s;
+  }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--border2); }
+  textarea { resize: vertical; min-height: 80px; }
+
+  .section-title { font-size: 11px; font-family: monospace; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--muted); margin: 20px 0 10px; }
+  .section-title:first-child { margin-top: 0; }
+
+  .dynamic-row { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+  .dynamic-row input { flex: 1; }
+  .dynamic-row input.narrow { max-width: 150px; flex: none; }
+  .rm-btn { padding: 5px 10px; font-size: 12px; border: 1px solid var(--border);
+    border-radius: var(--radius); background: none; cursor: pointer; color: var(--muted);
+    font-family: monospace; white-space: nowrap; }
+  .rm-btn:hover { border-color: var(--error-border); color: var(--error-text); }
+
+  .add-btn { font-size: 12px; color: var(--muted); background: none; border: none;
+    cursor: pointer; padding: 0; font-family: monospace; text-decoration: underline;
+    text-underline-offset: 3px; margin-top: 4px; }
+  .add-btn:hover { color: var(--text); }
+
+  .btn-row { display: flex; gap: 8px; margin-top: 20px; justify-content: flex-end; align-items: center; }
+  .btn { padding: 8px 20px; font-size: 13px; border: 1px solid var(--border);
+    border-radius: var(--radius); background: var(--surface); color: var(--text);
+    cursor: pointer; font-family: 'Georgia', serif; transition: background .12s; }
+  .btn:hover { background: var(--surface2); }
+  .btn:active { transform: scale(.98); }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  .btn-primary:hover { opacity: .85; background: var(--accent); }
+
+  .toast { display: none; padding: 10px 14px; border-radius: var(--radius); font-size: 13px; margin-bottom: 16px; }
+  .toast.show { display: block; }
+  .toast-success { background: var(--success-bg); color: var(--success-text); border: 1px solid var(--success-border); }
+  .toast-error { background: var(--error-bg); color: var(--error-text); border: 1px solid var(--error-border); }
+  .toast-info { background: var(--info-bg); color: var(--info-text); border: 1px solid var(--info-border); }
+
+  .spinner { display: none; font-size: 12px; color: var(--muted); font-family: monospace; }
+  .spinner.show { display: inline; }
+
+  /* Results */
+  .results-area { margin-top: 20px; }
+  .result-count { font-size: 12px; color: var(--muted); font-family: monospace; margin-bottom: 12px; }
+
+  table.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.data-table th { text-align: left; padding: 8px 12px; font-size: 10px; font-family: monospace;
+    letter-spacing: .06em; text-transform: uppercase; color: var(--muted);
+    border-bottom: 1px solid var(--border); font-weight: normal; }
+  table.data-table td { padding: 10px 12px; border-bottom: 1px solid var(--border);
+    vertical-align: top; color: var(--text); }
+  table.data-table tr:last-child td { border-bottom: none; }
+  table.data-table tr:hover td { background: var(--surface2); }
+
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px;
+    font-family: monospace; margin: 1px; }
+  .badge-info { background: var(--info-bg); color: var(--info-text); }
+  .badge-success { background: var(--success-bg); color: var(--success-text); }
+  .badge-neutral { background: var(--surface2); color: var(--muted); border: 1px solid var(--border); }
+
+  .coverage-grid { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
+  .coverage-card { background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 12px 16px; min-width: 120px; }
+  .coverage-card .field-nm { font-size: 10px; font-family: monospace; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+  .coverage-card .pct { font-size: 22px; }
+  .coverage-card .sub { font-size: 11px; color: var(--muted); }
+
+  .post-card { background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 14px 16px; margin-bottom: 10px; }
+  .post-card .meta { font-size: 11px; color: var(--muted); font-family: monospace; margin-bottom: 6px; }
+  .post-card .body { font-size: 13px; margin-bottom: 8px; }
+  .post-card .tags { display: flex; flex-wrap: wrap; gap: 4px; }
+
+  .empty { font-size: 13px; color: var(--muted); font-style: italic; }
+
+  .filter-bar { background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 16px; margin-bottom: 20px; }
+  .filter-hint { font-size: 11px; color: var(--muted); font-family: monospace; margin-bottom: 12px; }
+
+  hr.divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+
+  .mono { font-family: monospace; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Social Media Analysis DB</h1>
+  <span>CS 5330 · Spring 2026</span>
+</header>
+
+<div class="layout">
+  <nav>
+    <div class="nav-section">Data Entry</div>
+    <button class="nav-item active" onclick="show('new-project')">New project</button>
+    <button class="nav-item" onclick="show('add-post')">Add post</button>
+    <button class="nav-item" onclick="show('add-analysis')">Analysis result</button>
+    <div class="nav-section">Queries</div>
+    <button class="nav-item" onclick="show('query-posts')">Query posts</button>
+    <button class="nav-item" onclick="show('query-experiment')">Query experiment</button>
+    <div class="nav-section">Accounts</div>
+    <button class="nav-item" onclick="show('link-accounts')">Link accounts</button>
+  </nav>
+
+  <main>
+
+    <!-- ── NEW PROJECT ─────────────────────────────────────────── -->
+    <div id="panel-new-project" class="panel active">
+      <h2>New project</h2>
+      <div id="toast-project" class="toast"></div>
+
+      <div class="section-title">Project details</div>
+      <div class="form-grid cols-2">
+        <div class="field-group">
+          <label class="field-label">Project name *</label>
+          <input id="p-name" type="text" placeholder="e.g. SentimentStudy2026">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Institution *</label>
+          <input id="p-inst" type="text" placeholder="e.g. Georgia Tech">
+        </div>
+      </div>
+      <div class="form-grid cols-2">
+        <div class="field-group">
+          <label class="field-label">Manager first name</label>
+          <input id="p-mfirst" type="text" placeholder="Jane">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Manager last name</label>
+          <input id="p-mlast" type="text" placeholder="Doe">
+        </div>
+      </div>
+      <div class="form-grid cols-2">
+        <div class="field-group">
+          <label class="field-label">Start date</label>
+          <input id="p-start" type="date">
+        </div>
+        <div class="field-group">
+          <label class="field-label">End date</label>
+          <input id="p-end" type="date">
+        </div>
+      </div>
+
+      <div class="section-title">Analysis fields</div>
+      <div id="fields-container"></div>
+      <button class="add-btn" onclick="addFieldRow()">+ add field</button>
+
+      <div class="btn-row">
+        <span id="spin-project" class="spinner">saving…</span>
+        <button class="btn btn-primary" onclick="submitProject()">Create project</button>
+      </div>
+    </div>
+
+    <!-- ── ADD POST ────────────────────────────────────────────── -->
+    <div id="panel-add-post" class="panel">
+      <h2>Add post</h2>
+      <div id="toast-post" class="toast"></div>
+
+      <div class="section-title">Content</div>
+      <div class="form-grid cols-1">
+        <div class="field-group">
+          <label class="field-label">Post text *</label>
+          <textarea id="post-text" placeholder="Post content…"></textarea>
+        </div>
+      </div>
+      <div class="form-grid cols-2">
+        <div class="field-group">
+          <label class="field-label">Platform *</label>
+          <input id="post-platform" type="text" placeholder="e.g. Twitter">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Username * (max 40 chars)</label>
+          <input id="post-username" type="text" maxlength="40" placeholder="e.g. user123">
+        </div>
+      </div>
+      <div class="form-grid cols-2">
+        <div class="field-group">
+          <label class="field-label">Date &amp; time posted *</label>
+          <input id="post-time" type="datetime-local">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Associate with project</label>
+          <input id="post-project" type="text" placeholder="Project name (optional)">
+        </div>
+      </div>
+
+      <div class="section-title">Optional metadata</div>
+      <div class="form-grid cols-3">
+        <div class="field-group">
+          <label class="field-label">City</label>
+          <input id="post-city" type="text">
+        </div>
+        <div class="field-group">
+          <label class="field-label">State</label>
+          <input id="post-state" type="text">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Country</label>
+          <input id="post-country" type="text">
+        </div>
+      </div>
+      <div class="form-grid cols-3">
+        <div class="field-group">
+          <label class="field-label">Likes</label>
+          <input id="post-likes" type="number" min="0">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Dislikes</label>
+          <input id="post-dislikes" type="number" min="0">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Contains multimedia</label>
+          <select id="post-media">
+            <option value="">Unknown</option>
+            <option value="yes">Yes</option>
+            <option value="no">No</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-grid cols-1">
+        <div class="field-group">
+          <label class="field-label">Repost of post ID</label>
+          <input id="post-repostof" type="number" min="1" placeholder="Leave blank if original">
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <span id="spin-post" class="spinner">saving…</span>
+        <button class="btn btn-primary" onclick="submitPost()">Submit post</button>
+      </div>
+    </div>
+
+    <!-- ── ADD ANALYSIS ───────────────────────────────────────── -->
+    <div id="panel-add-analysis" class="panel">
+      <h2>Analysis result</h2>
+      <div id="toast-analysis" class="toast"></div>
+
+      <div class="section-title">Identify post &amp; project</div>
+      <div class="form-grid cols-2">
+        <div class="field-group">
+          <label class="field-label">Project name *</label>
+          <input id="a-project" type="text" placeholder="Project name">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Post ID *</label>
+          <input id="a-postid" type="number" min="1" placeholder="post_id">
+        </div>
+      </div>
+
+      <div class="section-title">Field values (partial results allowed)</div>
+      <div id="analysis-container"></div>
+      <button class="add-btn" onclick="addAnalysisRow()">+ add field value</button>
+
+      <div class="btn-row">
+        <span id="spin-analysis" class="spinner">saving…</span>
+        <button class="btn btn-primary" onclick="submitAnalysis()">Save results</button>
+      </div>
+    </div>
+
+    <!-- ── QUERY POSTS ─────────────────────────────────────────── -->
+    <div id="panel-query-posts" class="panel">
+      <h2>Query posts</h2>
+
+      <div class="filter-bar">
+        <div class="filter-hint">All filters optional — combined with AND logic</div>
+        <div class="form-grid cols-2">
+          <div class="field-group">
+            <label class="field-label">Platform</label>
+            <input id="q-platform" type="text" placeholder="e.g. Twitter">
+          </div>
+          <div class="field-group">
+            <label class="field-label">Username</label>
+            <input id="q-username" type="text" placeholder="e.g. user123">
+          </div>
+          <div class="field-group">
+            <label class="field-label">First name</label>
+            <input id="q-fname" type="text">
+          </div>
+          <div class="field-group">
+            <label class="field-label">Last name</label>
+            <input id="q-lname" type="text">
+          </div>
+          <div class="field-group">
+            <label class="field-label">Posted after</label>
+            <input id="q-from" type="datetime-local">
+          </div>
+          <div class="field-group">
+            <label class="field-label">Posted before</label>
+            <input id="q-to" type="datetime-local">
+          </div>
+        </div>
+        <div class="btn-row" style="margin-top:12px; justify-content:flex-start;">
+          <button class="btn btn-primary" onclick="runPostQuery()">Search</button>
+          <button class="btn" onclick="clearPostQuery()">Clear</button>
+          <span id="spin-posts" class="spinner">searching…</span>
+        </div>
+      </div>
+
+      <div id="post-results" class="results-area">
+        <p class="empty">Results will appear here.</p>
+      </div>
+    </div>
+
+    <!-- ── QUERY EXPERIMENT ───────────────────────────────────── -->
+    <div id="panel-query-experiment" class="panel">
+      <h2>Query experiment</h2>
+
+      <div class="filter-bar">
+        <div class="form-grid cols-1">
+          <div class="field-group">
+            <label class="field-label">Project (experiment) name *</label>
+            <input id="exp-name" type="text" placeholder="Project name"
+              onkeydown="if(event.key==='Enter') runExpQuery()">
+          </div>
+        </div>
+        <div class="btn-row" style="margin-top:12px; justify-content:flex-start;">
+          <button class="btn btn-primary" onclick="runExpQuery()">Look up</button>
+          <span id="spin-exp" class="spinner">loading…</span>
+        </div>
+      </div>
+
+      <div id="exp-results" class="results-area">
+        <p class="empty">Enter a project name and search.</p>
+      </div>
+    </div>
+
+    <!-- ── LINK ACCOUNTS ─────────────────────────────────────── -->
+    <div id="panel-link-accounts" class="panel">
+      <h2>Link accounts to a person</h2>
+      <div id="toast-link" class="toast"></div>
+
+      <div class="section-title">Person identity</div>
+      <div class="form-grid cols-3">
+        <div class="field-group">
+          <label class="field-label">Person ID (leave blank to create new)</label>
+          <input id="link-uid" type="number" min="1" placeholder="auto-assign">
+        </div>
+        <div class="field-group">
+          <label class="field-label">First name</label>
+          <input id="link-first" type="text">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Last name</label>
+          <input id="link-last" type="text">
+        </div>
+      </div>
+
+      <div class="section-title">Accounts to link</div>
+      <div id="link-container"></div>
+      <button class="add-btn" onclick="addLinkRow()">+ add account</button>
+
+      <div class="btn-row">
+        <span id="spin-link" class="spinner">saving…</span>
+        <button class="btn btn-primary" onclick="submitLink()">Link accounts</button>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+const API = 'http://localhost:5000';
+
+// ── Navigation ───────────────────────────────────────────────────
+function show(name) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+  document.getElementById('panel-' + name).classList.add('active');
+  event.currentTarget.classList.add('active');
+}
+
+// ── Toast ────────────────────────────────────────────────────────
+function toast(id, msg, type) {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.className = 'toast show toast-' + type;
+  setTimeout(() => el.className = 'toast', 4000);
+}
+
+// ── Spinner ──────────────────────────────────────────────────────
+function spin(id, on) {
+  document.getElementById(id).classList.toggle('show', on);
+}
+
+// ── API helper ───────────────────────────────────────────────────
+async function api(method, path, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(API + path, opts);
+  const data = await res.json().catch(() => ({}));
+  return { ok: res.ok, status: res.status, data };
+}
+
+// ── Dynamic rows ─────────────────────────────────────────────────
+function removeRow(btn) { btn.closest('.dynamic-row').remove(); }
+
+function addFieldRow() {
+  const c = document.getElementById('fields-container');
+  const d = document.createElement('div'); d.className = 'dynamic-row';
+  d.innerHTML = '<input type="text" placeholder="Field name (e.g. sentiment)">'
+    + '<button class="rm-btn" onclick="removeRow(this)">remove</button>';
+  c.appendChild(d);
+}
+
+function addAnalysisRow() {
+  const c = document.getElementById('analysis-container');
+  const d = document.createElement('div'); d.className = 'dynamic-row';
+  d.innerHTML = '<input type="text" class="narrow" placeholder="Field name">'
+    + '<input type="text" placeholder="Value">'
+    + '<button class="rm-btn" onclick="removeRow(this)">remove</button>';
+  c.appendChild(d);
+}
+
+function addLinkRow() {
+  const c = document.getElementById('link-container');
+  const d = document.createElement('div'); d.className = 'dynamic-row';
+  d.innerHTML = '<input type="text" class="narrow" placeholder="Platform">'
+    + '<input type="text" placeholder="Username (max 40)">'
+    + '<button class="rm-btn" onclick="removeRow(this)">remove</button>';
+  c.appendChild(d);
+}
+
+// Seed with one empty row on load
+window.addEventListener('DOMContentLoaded', () => {
+  addFieldRow(); addAnalysisRow(); addLinkRow(); addLinkRow();
+});
+
+// ── Submit project ────────────────────────────────────────────────
+async function submitProject() {
+  const name = document.getElementById('p-name').value.trim();
+  const inst = document.getElementById('p-inst').value.trim();
+  if (!name || !inst) { toast('toast-project', 'Project name and institution are required.', 'error'); return; }
+
+  const start = document.getElementById('p-start').value;
+  const end   = document.getElementById('p-end').value;
+  if (start && end && end < start) { toast('toast-project', 'End date must be on or after start date.', 'error'); return; }
+
+  const fields = [...document.querySelectorAll('#fields-container .dynamic-row input')]
+    .map(i => i.value.trim()).filter(Boolean);
+
+  spin('spin-project', true);
+  const { ok, data } = await api('POST', '/api/projects', {
+    project_name: name,
+    institution_name: inst,
+    manager_first_name: document.getElementById('p-mfirst').value.trim() || null,
+    manager_last_name:  document.getElementById('p-mlast').value.trim()  || null,
+    start_date: start || null,
+    end_date:   end   || null,
+    fields,
+  });
+  spin('spin-project', false);
+
+  if (ok) {
+    toast('toast-project', `Project "${name}" created with ${data.fields_created.length} field(s).`, 'success');
+    document.getElementById('p-name').value = '';
+    document.getElementById('p-inst').value = '';
+    document.getElementById('p-mfirst').value = '';
+    document.getElementById('p-mlast').value = '';
+    document.getElementById('p-start').value = '';
+    document.getElementById('p-end').value = '';
+    document.getElementById('fields-container').innerHTML = '';
+    addFieldRow();
+  } else {
+    toast('toast-project', data.error || 'Failed to create project.', 'error');
+  }
+}
+
+// ── Submit post ───────────────────────────────────────────────────
+async function submitPost() {
+  const text     = document.getElementById('post-text').value.trim();
+  const platform = document.getElementById('post-platform').value.trim();
+  const username = document.getElementById('post-username').value.trim();
+  const time     = document.getElementById('post-time').value;
+  if (!text || !platform || !username || !time) {
+    toast('toast-post', 'Text, platform, username, and time are required.', 'error'); return;
+  }
+  if (username.length > 40) {
+    toast('toast-post', 'Username must be at most 40 characters.', 'error'); return;
+  }
+
+  spin('spin-post', true);
+  const { ok, data } = await api('POST', '/api/posts', {
+    text, platform_name: platform, username, time,
+    project_name:       document.getElementById('post-project').value.trim()   || null,
+    city:               document.getElementById('post-city').value.trim()       || null,
+    state:              document.getElementById('post-state').value.trim()      || null,
+    country:            document.getElementById('post-country').value.trim()    || null,
+    num_likes:          document.getElementById('post-likes').value    || null,
+    num_dislikes:       document.getElementById('post-dislikes').value || null,
+    contains_multimedia: document.getElementById('post-media').value   || null,
+    repost_of:          document.getElementById('post-repostof').value || null,
+  });
+  spin('spin-post', false);
+
+  if (ok) {
+    toast('toast-post', `Post saved with ID ${data.post_id}.`, 'success');
+    ['post-text','post-platform','post-username','post-time','post-project',
+     'post-city','post-state','post-country','post-likes','post-dislikes','post-repostof']
+      .forEach(id => document.getElementById(id).value = '');
+    document.getElementById('post-media').value = '';
+  } else {
+    toast('toast-post', data.error || 'Failed to save post.', 'error');
+  }
+}
+
+// ── Submit analysis ───────────────────────────────────────────────
+async function submitAnalysis() {
+  const project = document.getElementById('a-project').value.trim();
+  const postId  = document.getElementById('a-postid').value.trim();
+  if (!project || !postId) { toast('toast-analysis', 'Project name and post ID are required.', 'error'); return; }
+
+  const rows = document.querySelectorAll('#analysis-container .dynamic-row');
+  const results = [];
+  rows.forEach(r => {
+    const ins = r.querySelectorAll('input');
+    if (ins[0] && ins[0].value.trim()) results.push({ field_name: ins[0].value.trim(), field_value: ins[1]?.value.trim() || '' });
+  });
+  if (!results.length) { toast('toast-analysis', 'Add at least one field value.', 'error'); return; }
+
+  spin('spin-analysis', true);
+  const { ok, data } = await api('POST', '/api/analysis', { project_name: project, post_id: postId, results });
+  spin('spin-analysis', false);
+
+  if (ok) {
+    toast('toast-analysis', `Saved ${data.saved.length} field value(s): ${data.saved.join(', ')}.`, 'success');
+  } else {
+    toast('toast-analysis', data.error || 'Failed to save results.', 'error');
+  }
+}
+
+// ── Query posts ───────────────────────────────────────────────────
+async function runPostQuery() {
+  const params = new URLSearchParams();
+  const add = (key, id) => { const v = document.getElementById(id).value.trim(); if (v) params.set(key, v); };
+  add('platform',   'q-platform');
+  add('username',   'q-username');
+  add('first_name', 'q-fname');
+  add('last_name',  'q-lname');
+  add('from',       'q-from');
+  add('to',         'q-to');
+
+  spin('spin-posts', true);
+  const { ok, data } = await api('GET', '/api/posts?' + params.toString());
+  spin('spin-posts', false);
+
+  const el = document.getElementById('post-results');
+  if (!ok) { el.innerHTML = `<p class="empty" style="color:var(--error-text)">${data.error || 'Error fetching posts.'}</p>`; return; }
+  if (!data.length) { el.innerHTML = '<p class="empty">No posts matched your filters.</p>'; return; }
+
+  let html = `<div class="result-count">${data.length} result(s)</div>`;
+  html += '<table class="data-table"><thead><tr>'
+    + '<th>ID</th><th>Text</th><th>Platform / user</th><th>Time</th><th>Experiments</th>'
+    + '</tr></thead><tbody>';
+
+  data.forEach(r => {
+    const exps = r.experiments.length
+      ? r.experiments.map(e => `<span class="badge badge-info">${esc(e)}</span>`).join(' ')
+      : '<span class="badge badge-neutral">none</span>';
+    const time = r.posted_at ? r.posted_at.replace('T', ' ').slice(0, 16) : '';
+    html += `<tr>
+      <td class="mono">${r.post_id}</td>
+      <td style="max-width:260px;word-break:break-word">${esc(r.text_content)}</td>
+      <td><div>${esc(r.platform_name)}</div><div style="color:var(--muted);font-family:monospace;font-size:11px">@${esc(r.username)}</div></td>
+      <td style="white-space:nowrap;font-family:monospace;font-size:11px">${time}</td>
+      <td>${exps}</td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+function clearPostQuery() {
+  ['q-platform','q-username','q-fname','q-lname','q-from','q-to'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('post-results').innerHTML = '<p class="empty">Results will appear here.</p>';
+}
+
+// ── Query experiment ──────────────────────────────────────────────
+async function runExpQuery() {
+  const name = document.getElementById('exp-name').value.trim();
+  if (!name) { document.getElementById('exp-results').innerHTML = '<p class="empty" style="color:var(--error-text)">Enter a project name.</p>'; return; }
+
+  spin('spin-exp', true);
+  const { ok, data } = await api('GET', '/api/experiments/' + encodeURIComponent(name));
+  spin('spin-exp', false);
+
+  const el = document.getElementById('exp-results');
+  if (!ok) { el.innerHTML = `<p class="empty" style="color:var(--error-text)">${data.error || 'Project not found.'}</p>`; return; }
+
+  const { project, fields, coverage, posts } = data;
+
+  let html = `<div style="font-size:13px;margin-bottom:14px">
+    <strong>${esc(project.project_name)}</strong>
+    &nbsp;·&nbsp; ${esc(project.institution_name)}
+    &nbsp;·&nbsp; Manager: ${esc((project.manager_first_name || '') + ' ' + (project.manager_last_name || ''))}
+    &nbsp;·&nbsp; ${project.start_date || '?'} → ${project.end_date || '?'}
+  </div>`;
+
+  // Coverage cards
+  if (fields.length) {
+    html += '<div class="coverage-grid">';
+    fields.forEach(f => {
+      html += `<div class="coverage-card">
+        <div class="field-nm">${esc(f)}</div>
+        <div class="pct">${coverage[f]}%</div>
+        <div class="sub">coverage</div>
+      </div>`;
+    });
+    html += '</div>';
+  }
+
+  html += `<div class="result-count">${posts.length} post(s) associated</div>`;
+
+  if (!posts.length) { html += '<p class="empty">No posts with results yet.</p>'; el.innerHTML = html; return; }
+
+  // Posts table
+  html += '<table class="data-table"><thead><tr><th>ID</th><th>Text</th><th>Platform / user</th><th>Time</th>';
+  fields.forEach(f => { html += `<th>${esc(f)}</th>`; });
+  html += '</tr></thead><tbody>';
+
+  posts.forEach(p => {
+    const time = p.posted_at ? p.posted_at.replace('T', ' ').slice(0, 16) : '';
+    html += `<tr>
+      <td class="mono">${p.post_id}</td>
+      <td style="max-width:200px;word-break:break-word">${esc(p.text_content)}</td>
+      <td><div>${esc(p.platform_name)}</div><div style="color:var(--muted);font-family:monospace;font-size:11px">@${esc(p.username)}</div></td>
+      <td style="white-space:nowrap;font-family:monospace;font-size:11px">${time}</td>`;
+    fields.forEach(f => {
+      const v = p.results[f];
+      html += v != null
+        ? `<td><span class="badge badge-success">${esc(String(v))}</span></td>`
+        : `<td style="color:var(--muted)">—</td>`;
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+// ── Link accounts ─────────────────────────────────────────────────
+async function submitLink() {
+  const rows = document.querySelectorAll('#link-container .dynamic-row');
+  const accounts = [];
+  rows.forEach(r => {
+    const ins = r.querySelectorAll('input');
+    if (ins[0]?.value.trim() && ins[1]?.value.trim())
+      accounts.push({ platform_name: ins[0].value.trim(), username: ins[1].value.trim() });
+  });
+  if (!accounts.length) { toast('toast-link', 'Add at least one account.', 'error'); return; }
+
+  const uid = document.getElementById('link-uid').value.trim();
+  spin('spin-link', true);
+  const { ok, data } = await api('POST', '/api/persons/link', {
+    unique_id:  uid ? parseInt(uid) : null,
+    first_name: document.getElementById('link-first').value.trim() || null,
+    last_name:  document.getElementById('link-last').value.trim()  || null,
+    accounts,
+  });
+  spin('spin-link', false);
+
+  if (ok) {
+    toast('toast-link', `${data.linked.length} account(s) linked to person ID ${data.unique_id}.`, 'success');
+    document.getElementById('link-uid').value = '';
+    document.getElementById('link-first').value = '';
+    document.getElementById('link-last').value = '';
+    document.getElementById('link-container').innerHTML = '';
+    addLinkRow(); addLinkRow();
+  } else {
+    toast('toast-link', data.error || 'Failed to link accounts.', 'error');
+  }
+}
+
+// ── Utility ───────────────────────────────────────────────────────
+function esc(str) {
+  if (str == null) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</body>
+</html>
