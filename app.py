@@ -301,8 +301,50 @@ def create_post():
     text_content = data.get("text", "").strip()
     posted_at = data.get("time", "").strip()
 
+    # Required field validation
     if not username or not platform_name or not text_content or not posted_at:
         return error("username, platform_name, text, and time are required")
+
+    # Username length
+    if len(username) > 40:
+        return error("username must be at most 40 characters")
+
+    # Validate likes / dislikes are non-negative integers
+    num_likes = data.get("num_likes")
+    num_dislikes = data.get("num_dislikes")
+    if num_likes not in (None, "", 0):
+        try:
+            num_likes = int(num_likes)
+            if num_likes < 0:
+                return error("num_likes must be a non-negative integer")
+        except (ValueError, TypeError):
+            return error("num_likes must be a non-negative integer")
+    else:
+        num_likes = None
+
+    if num_dislikes not in (None, "", 0):
+        try:
+            num_dislikes = int(num_dislikes)
+            if num_dislikes < 0:
+                return error("num_dislikes must be a non-negative integer")
+        except (ValueError, TypeError):
+            return error("num_dislikes must be a non-negative integer")
+    else:
+        num_dislikes = None
+
+    # Validate repost_of is a positive integer if provided
+    repost_of = data.get("repost_of") or None
+    if repost_of:
+        try:
+            repost_of = int(repost_of)
+            if repost_of <= 0:
+                return error("repost_of must be a positive post ID")
+            # Check the referenced post actually exists
+            exists = query("SELECT post_id FROM Post WHERE post_id = %s", (repost_of,), one=True)
+            if not exists:
+                return error(f"Repost target post ID {repost_of} does not exist", 404)
+        except (ValueError, TypeError):
+            return error("repost_of must be a valid post ID integer")
 
     # Ensure platform + account exist
     query("INSERT IGNORE INTO Platform (platform_name) VALUES (%s)", (platform_name,), commit=True)
@@ -322,10 +364,10 @@ def create_post():
              data.get("city") or None,
              data.get("state") or None,
              data.get("country") or None,
-             data.get("num_likes") or None,
-             data.get("num_dislikes") or None,
+             num_likes,
+             num_dislikes,
              {"yes": True, "no": False}.get(data.get("contains_multimedia", ""), None),
-             data.get("repost_of") or None),
+             repost_of),
             commit=True,
         )
     except mysql.connector.IntegrityError as e:
@@ -333,10 +375,12 @@ def create_post():
         if "uq_post_time" in msg:
             return error("This user already has a post on that platform at that exact time.", 409)
         return error(msg, 409)
+    except mysql.connector.DataError as e:
+        return error(f"Invalid data: {str(e)}", 400)
+    except Exception as e:
+        return error(f"Unexpected error: {str(e)}", 500)
 
-    # Optionally associate post with a project (link exists via AnalysisResult when results added)
     project_name = data.get("project_name", "").strip()
-
     return jsonify({"post_id": post_id, "project_name": project_name or None}), 201
 
 
@@ -532,4 +576,21 @@ def query_experiment(project_name):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(debug=False, port=5000)
+
+
+# ---------------------------------------------------------------------------
+# Global error handlers — ensures nothing ever hangs or leaks a stack trace
+# ---------------------------------------------------------------------------
+
+@app.errorhandler(404)
+def not_found(e):
+    return jsonify({"error": "Endpoint not found"}), 404
+
+@app.errorhandler(405)
+def method_not_allowed(e):
+    return jsonify({"error": "Method not allowed"}), 405
+
+@app.errorhandler(Exception)
+def unhandled_exception(e):
+    return jsonify({"error": "Unexpected error", "detail": str(e)}), 500
