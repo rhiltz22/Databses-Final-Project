@@ -274,19 +274,48 @@ def link_accounts():
         if not uname or not pname:
             errors.append(f"Skipped invalid entry: {acc}")
             continue
-        # Ensure account row exists before linking
+
+        # Ensure platform + account row exist
         query("INSERT IGNORE INTO Platform (platform_name) VALUES (%s)", (pname,), commit=True)
         query(
             "INSERT IGNORE INTO UserAccount (username, platform_name) VALUES (%s, %s)",
             (uname, pname), commit=True,
         )
+
+        # Check if this account is already linked to a DIFFERENT person
+        existing_link = query(
+            "SELECT unique_id FROM UserAccount WHERE username = %s AND platform_name = %s",
+            (uname, pname), one=True,
+        )
+        already_linked_to = existing_link.get("unique_id") if existing_link else None
+
+        if already_linked_to is not None and already_linked_to != unique_id:
+            errors.append(
+                f"@{uname} on {pname} is already linked to person ID {already_linked_to} "
+                f"— unlink them first before reassigning."
+            )
+            continue
+
         query(
             "UPDATE UserAccount SET unique_id = %s WHERE username = %s AND platform_name = %s",
             (unique_id, uname, pname), commit=True,
         )
         linked.append({"username": uname, "platform_name": pname})
 
-    return jsonify({"unique_id": unique_id, "linked": linked, "warnings": errors}), 200
+    # If every account was blocked, roll back the auto-created Person row
+    if not linked and not data.get("unique_id"):
+        query("DELETE FROM Person WHERE unique_id = %s", (unique_id,), commit=True)
+        return error(
+            "No accounts were linked. All provided accounts are already linked to other people. "
+            + " | ".join(errors),
+            409,
+        )
+
+    return jsonify({
+        "unique_id": unique_id,
+        "linked": linked,
+        "warnings": errors,
+    }), 200
 
 
 # ---------------------------------------------------------------------------
