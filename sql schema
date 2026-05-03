@@ -65,6 +65,19 @@ CREATE TABLE Project (
 );
 
 -- ------------------------------------------------------------
+-- ProjectPost
+-- When adding a post with project_name, insert into ProjectPost
+-- ------------------------------------------------------------
+
+CREATE TABLE ProjectPost (
+    project_name VARCHAR(200),
+    post_id INT,
+    PRIMARY KEY (project_name, post_id),
+    FOREIGN KEY (project_name) REFERENCES Project(project_name),
+    FOREIGN KEY (post_id) REFERENCES Post(post_id)
+);
+
+-- ------------------------------------------------------------
 -- UserAccount (Weak entity — identified by username + platform)
 -- A social media account. May optionally be linked to a Person.
 -- username is at most 40 characters per spec.
