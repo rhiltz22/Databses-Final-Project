@@ -22,6 +22,8 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)  # allow the frontend (any origin) to reach us during development
 
+MAX_TEXT_LEN = 65535  # MySQL TEXT max length
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "db_config.json")
 
@@ -93,6 +95,8 @@ def create_institution():
     name = (data or {}).get("institution_name", "").strip()
     if not name:
         return error("institution_name is required")
+    if len(name) > 200:
+        return error("institution_name must be at most 200 characters")
     query("INSERT IGNORE INTO Institution (institution_name) VALUES (%s)", (name,), commit=True)
     return jsonify({"institution_name": name}), 201
 
@@ -112,6 +116,8 @@ def create_platform():
     name = (data or {}).get("platform_name", "").strip()
     if not name:
         return error("platform_name is required")
+    if len(name) > 100:
+        return error("platform_name must be at most 100 characters")
     query("INSERT IGNORE INTO Platform (platform_name) VALUES (%s)", (name,), commit=True)
     return jsonify({"platform_name": name}), 201
 
@@ -127,6 +133,10 @@ def create_project():
     institution_name = data.get("institution_name", "").strip()
     if not project_name or not institution_name:
         return error("project_name and institution_name are required")
+    if len(project_name) > 200:
+        return error("project_name must be at most 200 characters")
+    if len(institution_name) > 200:
+        return error("institution_name must be at most 200 characters")
 
     start_date = data.get("start_date") or None
     end_date = data.get("end_date") or None
@@ -152,9 +162,15 @@ def create_project():
     except mysql.connector.IntegrityError:
         return error(f"Project '{project_name}' already exists", 409)
 
-    # Insert field definitions
-    fields = [f.strip() for f in data.get("fields", []) if f.strip()]
-    for field_name in fields:
+    # Insert field definitions (dedupe, preserve order)
+    fields_raw = [f.strip() for f in data.get("fields", []) if f.strip()]
+    fields = []
+    seen = set()
+    for field_name in fields_raw:
+        if field_name in seen:
+            continue
+        seen.add(field_name)
+        fields.append(field_name)
         query(
             "INSERT IGNORE INTO Field (field_name, project_name) VALUES (%s, %s)",
             (field_name, project_name), commit=True,
@@ -184,6 +200,8 @@ def add_field(project_name):
     field_name = data.get("field_name", "").strip()
     if not field_name:
         return error("field_name is required")
+    if len(field_name) > 200:
+        return error("field_name must be at most 200 characters")
     existing = query("SELECT * FROM Project WHERE project_name = %s", (project_name,), one=True)
     if not existing:
         return error(f"Project '{project_name}' not found", 404)
@@ -205,6 +223,24 @@ def create_account():
         return error("username and platform_name are required")
     if len(username) > 40:
         return error("username must be at most 40 characters")
+    if len(platform_name) > 100:
+        return error("platform_name must be at most 100 characters")
+
+    age = data.get("age")
+    if age is not None:
+        try:
+            age = int(age)
+        except (TypeError, ValueError):
+            return error("age must be an integer")
+        if age < 0 or age > 255:
+            return error("age must be between 0 and 255")
+
+    gender = data.get("gender")
+    if gender is not None:
+        if not isinstance(gender, str):
+            return error("gender must be a string")
+        if len(gender) > 50:
+            return error("gender must be at most 50 characters")
 
     # Ensure platform exists
     query("INSERT IGNORE INTO Platform (platform_name) VALUES (%s)", (platform_name,), commit=True)
@@ -220,8 +256,8 @@ def create_account():
          data.get("last_name") or None,
          data.get("country_of_birth") or None,
          data.get("country_of_residence") or None,
-         data.get("age") or None,
-         data.get("gender") or None,
+         age,
+         gender,
          bool(data.get("verification_status", False))),
         commit=True,
     )
@@ -300,9 +336,54 @@ def create_post():
     platform_name = data.get("platform_name", "").strip()
     text_content = data.get("text", "").strip()
     posted_at = data.get("time", "").strip()
+    contains_multimedia = data.get("contains_multimedia", None)
+    num_likes = data.get("num_likes")
+    num_dislikes = data.get("num_dislikes")
 
     if not username or not platform_name or not text_content or not posted_at:
         return error("username, platform_name, text, and time are required")
+
+    if len(text_content) > MAX_TEXT_LEN:
+        return error(f"text is too long (max {MAX_TEXT_LEN} characters)")
+
+    try:
+        datetime.strptime(posted_at, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return error("time must be in YYYY-MM-DD HH:MM:SS format")
+
+    if contains_multimedia is not None:
+        if isinstance(contains_multimedia, bool):
+            pass
+        elif isinstance(contains_multimedia, str) and contains_multimedia.lower() in {"yes", "no"}:
+            pass
+        else:
+            return error("contains_multimedia must be 'yes' or 'no'")
+
+    if num_likes is not None:
+        try:
+            num_likes = int(num_likes)
+        except (TypeError, ValueError):
+            return error("num_likes must be an integer")
+        if num_likes < 0 or num_likes > 4294967295:
+            return error("num_likes must be between 0 and 4294967295")
+
+    if num_dislikes is not None:
+        try:
+            num_dislikes = int(num_dislikes)
+        except (TypeError, ValueError):
+            return error("num_dislikes must be an integer")
+        if num_dislikes < 0 or num_dislikes > 4294967295:
+            return error("num_dislikes must be between 0 and 4294967295")
+
+    repost_of = data.get("repost_of")
+    if repost_of is not None:
+        try:
+            repost_of_int = int(repost_of)
+        except (TypeError, ValueError):
+            return error("repost_of must be an integer post_id")
+        existing = query("SELECT post_id FROM Post WHERE post_id = %s", (repost_of_int,), one=True)
+        if not existing:
+            return error("repost_of_post_id not found", 404)
 
     # Ensure platform + account exist
     query("INSERT IGNORE INTO Platform (platform_name) VALUES (%s)", (platform_name,), commit=True)
@@ -322,10 +403,10 @@ def create_post():
              data.get("city") or None,
              data.get("state") or None,
              data.get("country") or None,
-             data.get("num_likes") or None,
-             data.get("num_dislikes") or None,
-             {"yes": True, "no": False}.get(data.get("contains_multimedia", ""), None),
-             data.get("repost_of") or None),
+             num_likes if num_likes is not None else None,
+             num_dislikes if num_dislikes is not None else None,
+             {"yes": True, "no": False}.get(str(contains_multimedia).lower(), contains_multimedia if isinstance(contains_multimedia, bool) else None),
+             repost_of_int if repost_of is not None else None),
             commit=True,
         )
     except mysql.connector.IntegrityError as e:
@@ -368,10 +449,18 @@ def query_posts():
         params.append(args["last_name"])
 
     if args.get("from"):
+        try:
+            datetime.strptime(args["from"], "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            return error("from must be in YYYY-MM-DD HH:MM:SS format")
         conditions.append("p.posted_at >= %s")
         params.append(args["from"])
 
     if args.get("to"):
+        try:
+            datetime.strptime(args["to"], "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            return error("to must be in YYYY-MM-DD HH:MM:SS format")
         conditions.append("p.posted_at <= %s")
         params.append(args["to"])
 
@@ -441,11 +530,15 @@ def save_analysis():
 
     saved = []
     skipped = []
+    seen_fields = set()
     for item in results:
         field_name = item.get("field_name", "").strip()
         field_value = item.get("field_value", "")
         if not field_name:
             continue
+        if field_name in seen_fields:
+            continue
+        seen_fields.add(field_name)
 
         # Auto-create field if it doesn't exist yet
         query("INSERT IGNORE INTO Field (field_name, project_name) VALUES (%s, %s)",
@@ -532,4 +625,5 @@ def query_experiment(project_name):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    port = int(os.environ.get("PORT", "5000"))
+    app.run(debug=True, port=port)
