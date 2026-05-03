@@ -12,6 +12,7 @@ import os
 from datetime import datetime, date
 
 import mysql.connector
+from mysql.connector import pooling
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
@@ -30,6 +31,13 @@ CONFIG_PATH = os.path.join(BASE_DIR, "db_config.json")
 with open(CONFIG_PATH) as f:
     DB_CONFIG = json.load(f)
 
+POOL_SIZE = int(os.environ.get("DB_POOL_SIZE", "5"))
+DB_POOL = pooling.MySQLConnectionPool(
+    pool_name="app_pool",
+    pool_size=POOL_SIZE,
+    **DB_CONFIG,
+)
+
 
 # ---------------------------------------------------------------------------
 # DB helpers
@@ -37,7 +45,7 @@ with open(CONFIG_PATH) as f:
 
 def get_conn():
     """Return a new MySQL connection using the config file."""
-    return mysql.connector.connect(**DB_CONFIG)
+    return DB_POOL.get_connection()
 
 
 def query(sql, params=(), one=False, commit=False):
@@ -466,6 +474,16 @@ def query_posts():
 
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
+    try:
+        limit = int(args.get("limit", 500))
+        offset = int(args.get("offset", 0))
+    except ValueError:
+        return error("limit and offset must be integers")
+    if limit < 1 or limit > 500:
+        return error("limit must be between 1 and 500")
+    if offset < 0:
+        return error("offset must be 0 or greater")
+
     posts = query(
         f"""SELECT p.post_id, p.username, p.platform_name, p.posted_at,
                    p.text_content, p.city, p.state, p.country,
@@ -477,8 +495,8 @@ def query_posts():
                                AND ua.platform_name = p.platform_name
             {where}
             ORDER BY p.posted_at DESC
-            LIMIT 500""",
-        params,
+            LIMIT %s OFFSET %s""",
+        params + [limit, offset],
     )
 
     # Fetch associated project names for each post

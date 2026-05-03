@@ -164,3 +164,21 @@ CREATE TABLE AnalysisResult (
         ON UPDATE CASCADE
         ON DELETE CASCADE
 );
+
+-- ------------------------------------------------------------
+-- Indexes for common query filters (scale/read performance)
+-- ------------------------------------------------------------
+CREATE INDEX idx_post_platform_posted_at ON Post (platform_name, posted_at);
+CREATE INDEX idx_post_posted_at ON Post (posted_at);
+CREATE INDEX idx_useraccount_name ON UserAccount (last_name, first_name);
+
+-- ------------------------------------------------------------
+-- Optional partitioning (not enabled by default)
+-- Use only if data grows very large and you accept table changes.
+-- Example (MySQL 8+):
+-- ALTER TABLE Post
+-- PARTITION BY RANGE (YEAR(posted_at)) (
+--   PARTITION p2024 VALUES LESS THAN (2025),
+--   PARTITION p2025 VALUES LESS THAN (2026),
+--   PARTITION pmax VALUES LESS THAN MAXVALUE
+-- );
