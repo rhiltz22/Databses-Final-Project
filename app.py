@@ -21,9 +21,9 @@ from flask_cors import CORS
 # ---------------------------------------------------------------------------
 
 app = Flask(__name__)
-CORS(app)  # allow the frontend (any origin) to reach us during development
+CORS(app)
 
-MAX_TEXT_LEN = 65535  # MySQL TEXT max length
+MAX_TEXT_LEN = 65535
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "db_config.json")
@@ -44,17 +44,10 @@ DB_POOL = pooling.MySQLConnectionPool(
 # ---------------------------------------------------------------------------
 
 def get_conn():
-    """Return a new MySQL connection using the config file."""
     return DB_POOL.get_connection()
 
 
 def query(sql, params=(), one=False, commit=False):
-    """
-    Run *sql* with *params*.
-    - commit=True  → INSERT / UPDATE / DELETE; returns lastrowid.
-    - one=True     → SELECT returning a single dict or None.
-    - default      → SELECT returning a list of dicts.
-    """
     conn = get_conn()
     cur = conn.cursor(dictionary=True)
     try:
@@ -74,7 +67,6 @@ def error(msg, status=400):
 
 
 def serialize(obj):
-    """Make date/datetime JSON-serialisable."""
     if isinstance(obj, (date, datetime)):
         return obj.isoformat()
     return obj
@@ -89,7 +81,7 @@ def serialize_rows(rows):
 
 
 # ---------------------------------------------------------------------------
-# Institutions
+# Institutions (Unused by frontend)
 # ---------------------------------------------------------------------------
 
 @app.route("/api/institutions", methods=["GET"])
@@ -110,7 +102,7 @@ def create_institution():
 
 
 # ---------------------------------------------------------------------------
-# Platforms
+# Platforms (Unused by frontend)
 # ---------------------------------------------------------------------------
 
 @app.route("/api/platforms", methods=["GET"])
@@ -151,7 +143,6 @@ def create_project():
     if start_date and end_date and end_date < start_date:
         return error("end_date must be on or after start_date")
 
-    # Ensure institution exists
     query("INSERT IGNORE INTO Institution (institution_name) VALUES (%s)",
           (institution_name,), commit=True)
 
@@ -170,7 +161,6 @@ def create_project():
     except mysql.connector.IntegrityError:
         return error(f"Project '{project_name}' already exists", 409)
 
-    # Insert field definitions (dedupe, preserve order)
     fields_raw = [f.strip() for f in data.get("fields", []) if f.strip()]
     fields = []
     seen = set()
@@ -250,7 +240,6 @@ def create_account():
         if len(gender) > 50:
             return error("gender must be at most 50 characters")
 
-    # Ensure platform exists
     query("INSERT IGNORE INTO Platform (platform_name) VALUES (%s)", (platform_name,), commit=True)
 
     query(
@@ -289,10 +278,6 @@ def create_person():
 
 @app.route("/api/persons/link", methods=["POST"])
 def link_accounts():
-    """
-    Link one or more (platform, username) pairs to a single Person.
-    If unique_id is omitted, a new Person row is created automatically.
-    """
     data = request.get_json() or {}
     accounts = data.get("accounts", [])
     if not accounts:
@@ -319,14 +304,12 @@ def link_accounts():
             errors.append(f"Skipped invalid entry: {acc}")
             continue
 
-        # Ensure platform + account row exist
         query("INSERT IGNORE INTO Platform (platform_name) VALUES (%s)", (pname,), commit=True)
         query(
             "INSERT IGNORE INTO UserAccount (username, platform_name) VALUES (%s, %s)",
             (uname, pname), commit=True,
         )
 
-        # Check if this account is already linked to a DIFFERENT person
         existing_link = query(
             "SELECT unique_id FROM UserAccount WHERE username = %s AND platform_name = %s",
             (uname, pname), one=True,
@@ -346,7 +329,6 @@ def link_accounts():
         )
         linked.append({"username": uname, "platform_name": pname})
 
-    # If every account was blocked, roll back the auto-created Person row
     if not linked and not data.get("unique_id"):
         query("DELETE FROM Person WHERE unique_id = %s", (unique_id,), commit=True)
         return error(
@@ -377,9 +359,11 @@ def create_post():
     num_likes = data.get("num_likes")
     num_dislikes = data.get("num_dislikes")
 
-    # Required field validation
     if not username or not platform_name or not text_content or not posted_at:
         return error("username, platform_name, text, and time are required")
+
+    if len(username) > 40:
+        return error("username must be at most 40 characters")
 
     if len(text_content) > MAX_TEXT_LEN:
         return error(f"text is too long (max {MAX_TEXT_LEN} characters)")
@@ -413,57 +397,19 @@ def create_post():
         if num_dislikes < 0 or num_dislikes > 4294967295:
             return error("num_dislikes must be between 0 and 4294967295")
 
+    repost_of_int = None
     repost_of = data.get("repost_of")
     if repost_of is not None:
         try:
             repost_of_int = int(repost_of)
         except (TypeError, ValueError):
             return error("repost_of must be an integer post_id")
+        if repost_of_int <= 0:
+            return error("repost_of must be a positive post ID")
         existing = query("SELECT post_id FROM Post WHERE post_id = %s", (repost_of_int,), one=True)
         if not existing:
             return error("repost_of_post_id not found", 404)
-    # Username length
-    if len(username) > 40:
-        return error("username must be at most 40 characters")
 
-    # Validate likes / dislikes are non-negative integers
-    num_likes = data.get("num_likes")
-    num_dislikes = data.get("num_dislikes")
-    if num_likes not in (None, "", 0):
-        try:
-            num_likes = int(num_likes)
-            if num_likes < 0:
-                return error("num_likes must be a non-negative integer")
-        except (ValueError, TypeError):
-            return error("num_likes must be a non-negative integer")
-    else:
-        num_likes = None
-
-    if num_dislikes not in (None, "", 0):
-        try:
-            num_dislikes = int(num_dislikes)
-            if num_dislikes < 0:
-                return error("num_dislikes must be a non-negative integer")
-        except (ValueError, TypeError):
-            return error("num_dislikes must be a non-negative integer")
-    else:
-        num_dislikes = None
-
-    # Validate repost_of is a positive integer if provided
-    repost_of = data.get("repost_of") or None
-    if repost_of:
-        try:
-            repost_of = int(repost_of)
-            if repost_of <= 0:
-                return error("repost_of must be a positive post ID")
-            # Check the referenced post actually exists
-            exists = query("SELECT post_id FROM Post WHERE post_id = %s", (repost_of,), one=True)
-            if not exists:
-                return error(f"Repost target post ID {repost_of} does not exist", 404)
-        except (ValueError, TypeError):
-            return error("repost_of must be a valid post ID integer")
-
-    # Ensure platform + account exist
     query("INSERT IGNORE INTO Platform (platform_name) VALUES (%s)", (platform_name,), commit=True)
     query(
         "INSERT IGNORE INTO UserAccount (username, platform_name) VALUES (%s, %s)",
@@ -481,14 +427,10 @@ def create_post():
              data.get("city") or None,
              data.get("state") or None,
              data.get("country") or None,
-             num_likes if num_likes is not None else None,
-             num_dislikes if num_dislikes is not None else None,
-             {"yes": True, "no": False}.get(str(contains_multimedia).lower(), contains_multimedia if isinstance(contains_multimedia, bool) else None),
-             repost_of_int if repost_of is not None else None),
              num_likes,
              num_dislikes,
-             {"yes": True, "no": False}.get(data.get("contains_multimedia", ""), None),
-             repost_of),
+             {"yes": True, "no": False}.get(str(contains_multimedia).lower(), contains_multimedia if isinstance(contains_multimedia, bool) else None),
+             repost_of_int),
             commit=True,
         )
     except mysql.connector.IntegrityError as e:
@@ -507,11 +449,6 @@ def create_post():
 
 @app.route("/api/posts", methods=["GET"])
 def query_posts():
-    """
-    Query posts with optional AND filters:
-      platform, username, first_name, last_name, from, to
-    Returns posts with their associated project names.
-    """
     args = request.args
     conditions = []
     params = []
@@ -525,11 +462,13 @@ def query_posts():
         params.append(args["username"])
 
     if args.get("first_name"):
-        conditions.append("ua.first_name = %s")
+        conditions.append("(ua.first_name = %s OR pr.first_name = %s)")
+        params.append(args["first_name"])
         params.append(args["first_name"])
 
     if args.get("last_name"):
-        conditions.append("ua.last_name = %s")
+        conditions.append("(ua.last_name = %s OR pr.last_name = %s)")
+        params.append(args["last_name"])
         params.append(args["last_name"])
 
     if args.get("from"):
@@ -569,13 +508,13 @@ def query_posts():
             FROM Post p
             JOIN UserAccount ua ON ua.username = p.username
                                AND ua.platform_name = p.platform_name
+            LEFT JOIN Person pr ON pr.unique_id = ua.unique_id
             {where}
             ORDER BY p.posted_at DESC
             LIMIT %s OFFSET %s""",
         params + [limit, offset],
     )
 
-    # Fetch associated project names for each post
     post_ids = [r["post_id"] for r in posts]
     experiments_map = {}
     if post_ids:
@@ -602,10 +541,6 @@ def query_posts():
 
 @app.route("/api/analysis", methods=["POST"])
 def save_analysis():
-    """
-    Save (partial) analysis results for a post in a project.
-    Body: { project_name, post_id, results: [{field_name, field_value}] }
-    """
     data = request.get_json() or {}
     project_name = data.get("project_name", "").strip()
     post_id = data.get("post_id")
@@ -634,7 +569,6 @@ def save_analysis():
             continue
         seen_fields.add(field_name)
 
-        # Auto-create field if it doesn't exist yet
         query("INSERT IGNORE INTO Field (field_name, project_name) VALUES (%s, %s)",
               (field_name, project_name), commit=True)
 
@@ -656,10 +590,6 @@ def save_analysis():
 
 @app.route("/api/experiments/<path:project_name>", methods=["GET"])
 def query_experiment(project_name):
-    """
-    Return all posts associated with a project, their analysis results,
-    and per-field coverage percentages.
-    """
     project = query("SELECT * FROM Project WHERE project_name = %s", (project_name,), one=True)
     if not project:
         return error(f"Project '{project_name}' not found", 404)
@@ -670,7 +600,6 @@ def query_experiment(project_name):
     )
     field_names = [f["field_name"] for f in fields]
 
-    # All posts that have at least one result in this project
     post_rows = query(
         """SELECT DISTINCT p.post_id, p.username, p.platform_name, p.posted_at, p.text_content
            FROM AnalysisResult ar
@@ -680,13 +609,11 @@ def query_experiment(project_name):
         (project_name,)
     )
 
-    # All results for this project
     result_rows = query(
         "SELECT post_id, field_name, field_value FROM AnalysisResult WHERE project_name = %s",
         (project_name,)
     )
 
-    # Build per-post result map
     results_map = {}
     for r in result_rows:
         results_map.setdefault(r["post_id"], {})[r["field_name"]] = r["field_value"]
@@ -720,12 +647,11 @@ def query_experiment(project_name):
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5000"))
-    app.run(debug=True, port=port)
-    app.run(debug=False, port=5000)
+    app.run(debug=False, port=port)
 
 
 # ---------------------------------------------------------------------------
-# Global error handlers — ensures nothing ever hangs or leaks a stack trace
+# Global error handlers
 # ---------------------------------------------------------------------------
 
 @app.errorhandler(404)
