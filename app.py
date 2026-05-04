@@ -433,11 +433,13 @@ def query_posts():
         params.append(args["username"])
 
     if args.get("first_name"):
-        conditions.append("ua.first_name = %s")
+        conditions.append("(ua.first_name = %s OR pr.first_name = %s)")
+        params.append(args["first_name"])
         params.append(args["first_name"])
 
     if args.get("last_name"):
-        conditions.append("ua.last_name = %s")
+        conditions.append("(ua.last_name = %s OR pr.last_name = %s)")
+        params.append(args["last_name"])
         params.append(args["last_name"])
 
     if args.get("from"):
@@ -459,6 +461,7 @@ def query_posts():
             FROM Post p
             JOIN UserAccount ua ON ua.username = p.username
                                AND ua.platform_name = p.platform_name
+            LEFT JOIN Person pr ON pr.unique_id = ua.unique_id
             {where}
             ORDER BY p.posted_at DESC
             LIMIT 500""",
