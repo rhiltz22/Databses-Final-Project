@@ -1,0 +1,7 @@
+{
+  "host": "localhost",
+  "port": 3306,
+  "user": "demo_user",
+  "password": "demo_pass_123",
+  "database": "social_media_db"
+}
