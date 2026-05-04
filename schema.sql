@@ -5,6 +5,10 @@
 
 -- Drop tables in reverse dependency order for clean re-runs
 DROP TABLE IF EXISTS AnalysisResult;
+USE social_media_db;
+-- Drop tables in reverse dependency order for clean re-runs
+DROP TABLE IF EXISTS AnalysisResult;
+DROP TABLE IF EXISTS ProjectPost;
 DROP TABLE IF EXISTS Field;
 DROP TABLE IF EXISTS Post;
 DROP TABLE IF EXISTS UserAccount;
@@ -63,6 +67,8 @@ CREATE TABLE Project (
     CONSTRAINT chk_project_dates
         CHECK (end_date IS NULL OR start_date IS NULL OR end_date >= start_date)
 );
+
+
 
 -- ------------------------------------------------------------
 -- UserAccount (Weak entity — identified by username + platform)
@@ -124,6 +130,18 @@ CREATE TABLE Post (
         ON DELETE SET NULL
 );
 
+-- ------------------------------------------------------------
+-- ProjectPost
+-- When adding a post with project_name, insert into ProjectPost
+-- ------------------------------------------------------------
+
+CREATE TABLE ProjectPost (
+    project_name VARCHAR(200),
+    post_id INT,
+    PRIMARY KEY (project_name, post_id),
+    FOREIGN KEY (project_name) REFERENCES Project(project_name),
+    FOREIGN KEY (post_id) REFERENCES Post(post_id)
+);
 -- ------------------------------------------------------------
 -- Field (Weak entity — identified by field_name + project_name)
 -- Defines the output fields for a given project.

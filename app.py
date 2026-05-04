@@ -318,19 +318,48 @@ def link_accounts():
         if not uname or not pname:
             errors.append(f"Skipped invalid entry: {acc}")
             continue
-        # Ensure account row exists before linking
+
+        # Ensure platform + account row exist
         query("INSERT IGNORE INTO Platform (platform_name) VALUES (%s)", (pname,), commit=True)
         query(
             "INSERT IGNORE INTO UserAccount (username, platform_name) VALUES (%s, %s)",
             (uname, pname), commit=True,
         )
+
+        # Check if this account is already linked to a DIFFERENT person
+        existing_link = query(
+            "SELECT unique_id FROM UserAccount WHERE username = %s AND platform_name = %s",
+            (uname, pname), one=True,
+        )
+        already_linked_to = existing_link.get("unique_id") if existing_link else None
+
+        if already_linked_to is not None and already_linked_to != unique_id:
+            errors.append(
+                f"@{uname} on {pname} is already linked to person ID {already_linked_to} "
+                f"— unlink them first before reassigning."
+            )
+            continue
+
         query(
             "UPDATE UserAccount SET unique_id = %s WHERE username = %s AND platform_name = %s",
             (unique_id, uname, pname), commit=True,
         )
         linked.append({"username": uname, "platform_name": pname})
 
-    return jsonify({"unique_id": unique_id, "linked": linked, "warnings": errors}), 200
+    # If every account was blocked, roll back the auto-created Person row
+    if not linked and not data.get("unique_id"):
+        query("DELETE FROM Person WHERE unique_id = %s", (unique_id,), commit=True)
+        return error(
+            "No accounts were linked. All provided accounts are already linked to other people. "
+            + " | ".join(errors),
+            409,
+        )
+
+    return jsonify({
+        "unique_id": unique_id,
+        "linked": linked,
+        "warnings": errors,
+    }), 200
 
 
 # ---------------------------------------------------------------------------
@@ -348,6 +377,7 @@ def create_post():
     num_likes = data.get("num_likes")
     num_dislikes = data.get("num_dislikes")
 
+    # Required field validation
     if not username or not platform_name or not text_content or not posted_at:
         return error("username, platform_name, text, and time are required")
 
@@ -392,6 +422,46 @@ def create_post():
         existing = query("SELECT post_id FROM Post WHERE post_id = %s", (repost_of_int,), one=True)
         if not existing:
             return error("repost_of_post_id not found", 404)
+    # Username length
+    if len(username) > 40:
+        return error("username must be at most 40 characters")
+
+    # Validate likes / dislikes are non-negative integers
+    num_likes = data.get("num_likes")
+    num_dislikes = data.get("num_dislikes")
+    if num_likes not in (None, "", 0):
+        try:
+            num_likes = int(num_likes)
+            if num_likes < 0:
+                return error("num_likes must be a non-negative integer")
+        except (ValueError, TypeError):
+            return error("num_likes must be a non-negative integer")
+    else:
+        num_likes = None
+
+    if num_dislikes not in (None, "", 0):
+        try:
+            num_dislikes = int(num_dislikes)
+            if num_dislikes < 0:
+                return error("num_dislikes must be a non-negative integer")
+        except (ValueError, TypeError):
+            return error("num_dislikes must be a non-negative integer")
+    else:
+        num_dislikes = None
+
+    # Validate repost_of is a positive integer if provided
+    repost_of = data.get("repost_of") or None
+    if repost_of:
+        try:
+            repost_of = int(repost_of)
+            if repost_of <= 0:
+                return error("repost_of must be a positive post ID")
+            # Check the referenced post actually exists
+            exists = query("SELECT post_id FROM Post WHERE post_id = %s", (repost_of,), one=True)
+            if not exists:
+                return error(f"Repost target post ID {repost_of} does not exist", 404)
+        except (ValueError, TypeError):
+            return error("repost_of must be a valid post ID integer")
 
     # Ensure platform + account exist
     query("INSERT IGNORE INTO Platform (platform_name) VALUES (%s)", (platform_name,), commit=True)
@@ -415,6 +485,10 @@ def create_post():
              num_dislikes if num_dislikes is not None else None,
              {"yes": True, "no": False}.get(str(contains_multimedia).lower(), contains_multimedia if isinstance(contains_multimedia, bool) else None),
              repost_of_int if repost_of is not None else None),
+             num_likes,
+             num_dislikes,
+             {"yes": True, "no": False}.get(data.get("contains_multimedia", ""), None),
+             repost_of),
             commit=True,
         )
     except mysql.connector.IntegrityError as e:
@@ -422,10 +496,12 @@ def create_post():
         if "uq_post_time" in msg:
             return error("This user already has a post on that platform at that exact time.", 409)
         return error(msg, 409)
+    except mysql.connector.DataError as e:
+        return error(f"Invalid data: {str(e)}", 400)
+    except Exception as e:
+        return error(f"Unexpected error: {str(e)}", 500)
 
-    # Optionally associate post with a project (link exists via AnalysisResult when results added)
     project_name = data.get("project_name", "").strip()
-
     return jsonify({"post_id": post_id, "project_name": project_name or None}), 201
 
 
@@ -645,3 +721,21 @@ def query_experiment(project_name):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5000"))
     app.run(debug=True, port=port)
+    app.run(debug=False, port=5000)
+
+
+# ---------------------------------------------------------------------------
+# Global error handlers — ensures nothing ever hangs or leaks a stack trace
+# ---------------------------------------------------------------------------
+
+@app.errorhandler(404)
+def not_found(e):
+    return jsonify({"error": "Endpoint not found"}), 404
+
+@app.errorhandler(405)
+def method_not_allowed(e):
+    return jsonify({"error": "Method not allowed"}), 405
+
+@app.errorhandler(Exception)
+def unhandled_exception(e):
+    return jsonify({"error": "Unexpected error", "detail": str(e)}), 500

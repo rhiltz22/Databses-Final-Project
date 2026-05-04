@@ -1,0 +1,33 @@
+Duplicate / conflicting data
+
+Adding the same project name twice → your schema has a PK so it'll reject it, but make sure the error message shown in the UI is clear, not a raw 500 crash
+Submitting the same post (same user, platform, exact same minute) twice → your uq_post_time constraint handles this, the UI should say something readable like "This user already has a post at that time"
+
+Missing / empty fields
+
+Submitting a project with no name, or a post with no text → your frontend validates these, but he may try bypassing the UI entirely with curl like we did
+Try this yourself: curl -X POST http://localhost:5000/api/posts -H "Content-Type: application/json" -d '{}' — make sure it returns a clean 400 error, not a crash
+
+Invalid foreign keys
+
+Adding an analysis result for a post ID that doesn't exist
+Adding an analysis result for a project that doesn't exist
+Your backend checks both of these already
+
+Boundary values
+
+A username longer than 40 characters
+Negative likes/dislikes
+An end date before the start date on a project
+A post that reposts a non-existent post ID
+
+Query edge cases
+
+Querying posts with no filters at all (returns everything — make sure it doesn't time out)
+Querying an experiment name that doesn't exist
+Searching for a username that has no posts
+
+Linking accounts
+
+Linking the same account to two different people
+Linking an account to a person ID that doesn't exist
